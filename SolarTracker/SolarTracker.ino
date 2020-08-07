@@ -2,13 +2,14 @@
 Nome>:
 Autor:
 Descrição:
-
 */
 #include <Servo.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-
-
+#include <MySQL_Connection.h>
+#include <MySQL_Cursor.h>
+#include <Wire.h>
+#include <Adafruit_INA219.h>
 
 //Definição dos pinos dos LDRs
 #define ldrSupEsquerda D8
@@ -44,12 +45,15 @@ int tempo_delay = 3; //delay entre as atualizacoes de angulo
 int passos = 5; //passos em cada atualização de angulo
 bool aplicar_fator_correcao = false; // aplicar fator de correção nos valores dos LRDs
 int divisor = 1; //1 para somar os valores de cada sentido de rotação ou dois para usar a média dos valores
-
-//String ssid = "DEIILOR MESH";
-//String password = "lei0204lei";
-String ssid = "DEIILOR ZEN";
-String password = "12345678";
-
+String ssid = "DEIILOR MESH";
+String password = "lei0204lei";
+//String ssid = "DEIILOR ZEN";
+//String password = "12345678";
+IPAddress server_addr(85, 10, 205, 173);  // IP dobanco de dados -- 85.10.205.173:3306
+int porta = 3306; // Porta do banco de dados
+char db_user[] = "deiilor_solar";               // Usuário MySQL
+char db_password[] = "RGY6Pt6weimkuJa5iw85";    // Senha MySQL
+char db_schema[] = "solar_analytics";           // Nome da base de dados
 
 /*#### Configurações ####*/
 
@@ -69,7 +73,22 @@ double fatorLdrSupDireita = 1.0;
 double fatorLdrInfEsquerda = 1.0;
 double fatorLdrInfDireita = 1.0;
 
+//Criação dos objetos do banco de dados
 WiFiClient client;
+MySQL_Connection conn((Client *)&client);
+MySQL_Cursor cur = MySQL_Cursor(&conn);
+char query[2000];
+
+// Sensor de corrente
+Adafruit_INA219 Sensor_A(0x44);
+Adafruit_INA219 Sensor_B(0x40);
+float shuntvoltage = 0;
+float busvoltage = 0;
+float current_mA = 0;
+float loadvoltage = 0;
+float power_mW = 0;
+
+int aux = 0;
 
 void setup() {
   pinMode(ldrSupEsquerda, INPUT);
@@ -84,18 +103,34 @@ void setup() {
   servo_vertical.attach(pin_servo_vertical);  // atribui o porta ao servo
   servo_horizontal.attach(pin_servo_horizontal);  // atribui o porta ao servo
 
-  // ###############  Conexão na rede WiFi   ###############
-  conect_wifi();
-  // ###############  Conexão na rede WiFi   ###############
+  conecta_wifi(); // Conexão na rede WiFi 
+  conecta_mysql(); // Conexão no servidor MySQL
+
+  inicia_sensor_corrente();
 
 }
 
 void loop() {
 
-  delay(50);
- // atualiza_ldr();
+  timer(3);
+//    atualiza_ldr();
 //  movimento_vertical(movimentar());
 //  movimento_horizontal(movimentar());
+
+//  if (aux == 0){
+//    insertMedicao(1, 3.3, "teste") ;
+//    aux = 1;
+//  }
+// monitor_corrente_tensao();
+
+
+// Serial.print("Corrente sensor A: ");
+// Serial.print(String(monitor_corrente(Sensor_A)));
+// Serial.println(" - media - " + String(random(1024,4096)));
+
+ Serial.print("Corrente sensor B: ");
+ Serial.print(String(monitor_corrente(Sensor_B)));
+ Serial.println(" - media - " + String(random(1024,4096)));
 }
 
 bool movimentar(){
@@ -206,7 +241,7 @@ int multiplex(int pin){
   
 }
 
-void conect_wifi(){
+void conecta_wifi(){
   WiFi.begin(ssid, password);
   Serial.println();
   Serial.print("\n\n\nConectando a ");
@@ -231,4 +266,90 @@ void conect_wifi(){
   Serial.println("WiFi conectado!");
   Serial.print("IP Local: ");
   Serial.println(WiFi.localIP());  
+}
+
+void conecta_mysql(){
+  // ###############  CONECTA NO MySQL   ###############
+  Serial.println("\n\n\nCONECTANDO AO MySQL\n\n\n");
+  
+  while (!conn.connect(server_addr, porta, db_user, db_password)) {
+    Serial.println("Conexão SQL falhou.");
+    conn.close();
+    delay(1000);
+    Serial.println("Conectando SQL novamente.");
+  }
+  Serial.println("Conectado ao servidor SQL.");
+  // ###############  CONECTA NO MySQL   ###############
+}
+
+void insertMedicao(int id_placa, double valor, String tipo) {
+  
+  String query_medicao = "INSERT INTO solar_analytics.tb_medicao (id_placa, valor, tipo, dt_medicao) VALUES (" + String(id_placa) + ", " + valor + " , '" + tipo + "', now());";
+  
+  Serial.println(query_medicao);
+  query_medicao.toCharArray(query, 2000);
+
+  MySQL_Cursor *cur_mem = new MySQL_Cursor(&conn);
+  // Execute the query
+  if( cur_mem->execute(query)){
+    Serial.println("Registro inserido com sucesso!");
+  } else{
+    Serial.println("Erro Fatal!");
+  }
+  delete cur_mem;
+}
+
+double monitor_corrente(Adafruit_INA219 ina219){
+  float aux = 0;
+  int count = 0;
+  current_mA = 0;
+  shuntvoltage = ina219.getShuntVoltage_mV();
+  busvoltage = ina219.getBusVoltage_V();
+  float _current_mA = ina219.getCurrent_mA();
+  power_mW = ina219.getPower_mW();
+  loadvoltage = busvoltage + (shuntvoltage / 1000);
+
+  for (int i=0; i < 10; i++ ){
+    count++;
+    aux = ina219.getCurrent_mA();
+   // Serial.println("AUX:   " + String(aux));
+    if (aux > 0){
+      current_mA += aux;
+    }else{
+      i--;
+    }
+    
+    if (count == 20){
+      return 0.0;
+    }
+  }
+
+
+    
+//  Serial.print("Bus Voltage:   "); Serial.print(busvoltage); Serial.println(" V");
+//  Serial.print("Shunt Voltage: "); Serial.print(shuntvoltage); Serial.println(" mV");
+//  Serial.print("Load Voltage:  "); Serial.print(loadvoltage); Serial.println(" V");
+//  Serial.print("Current:       "); Serial.print(_current_mA); Serial.println(" mA");
+//  Serial.print("Power:         "); Serial.print(power_mW); Serial.println(" mW");
+//
+//  delay(50);
+  return current_mA = current_mA/10;
+  
+}
+
+void inicia_sensor_corrente(){
+      while (! Sensor_A.begin()) {
+    Serial.println("Failed to find INA219 chip A");
+        delay(50);
+  }
+  delay(100);  
+    
+    while (! Sensor_B.begin()) {
+    Serial.println("Failed to find INA219 chip B");
+    delay(50);
+  }
+}
+
+void timer(int segundos){
+    delay(segundos*1000);
 }
