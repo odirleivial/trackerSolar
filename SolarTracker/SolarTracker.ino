@@ -12,9 +12,9 @@ Descrição:
 #include <Adafruit_INA219.h>
 
 //Definição dos pinos dos LDRs
-#define ldrSupEsquerda D8
+#define ldrSupEsquerda D6
 #define ldrSupDireita D7
-#define ldrInfEsquerda D6
+#define ldrInfEsquerda D8
 #define ldrInfDireita D5
 #define pin_analog A0
 
@@ -32,19 +32,21 @@ void posicao_espera();
 String to_str(int);
 
 /*#### Declaração das funcoes ####*/
-
+ 
 /*#### Configurações ####*/
-int escala = 200; //escala de luminosidade dos sensores LDR
-int luminosidade_minima = 20; //valor para que o sistema vá para a posição de espera
-int sensibilidade = 5; // esse número define a diferenca entre duas medidas para que seja feito algum movimento
+int escala = 3000; //escala de luminosidade dos sensores LDR
+int luminosidade_minima = 50; //valor para que o sistema vá para a posição de espera
+int sensibilidade = 10; // esse número define a diferenca entre duas medidas para que seja feito algum movimento
+int divisor = 2; //1 para somar os valores de cada sentido de rotação ou dois para usar a média dos valores
+int range_ini = 0;
+int tangr_fin = 1024;
 int angula_max_horizontal = 170; //Angulo máximo no eixo horizontal
 int angula_mim_horizontal = 10; //Angulo mínimo no eixo horizontal
 int angula_max_vertical = 130; //Angulo máximo no eixo vertical
 int angula_mim_vertical = 10; //Angulo mínimo no eixo vertical
-int tempo_delay = 3; //delay entre as atualizacoes de angulo
-int passos = 5; //passos em cada atualização de angulo
+int tempo_delay = 2; //delay entre as atualizacoes de angulo
+int passos = 1; //passos em cada atualização de angulo
 bool aplicar_fator_correcao = false; // aplicar fator de correção nos valores dos LRDs
-int divisor = 1; //1 para somar os valores de cada sentido de rotação ou dois para usar a média dos valores
 String ssid = "DEIILOR MESH";
 String password = "lei0204lei";
 //String ssid = "DEIILOR ZEN";
@@ -91,31 +93,37 @@ float power_mW = 0;
 int aux = 0;
 
 void setup() {
-  pinMode(ldrSupEsquerda, INPUT);
-  pinMode(ldrSupDireita, INPUT);
-  pinMode(ldrInfEsquerda, INPUT);
-  pinMode(ldrInfDireita, INPUT);    
-  pinMode(pin_servo_vertical, INPUT); 
-  pinMode(pin_servo_horizontal, INPUT); 
-  Serial.begin(115200);
-  delay(3000);
-  
-  servo_vertical.attach(pin_servo_vertical);  // atribui o porta ao servo
-  servo_horizontal.attach(pin_servo_horizontal);  // atribui o porta ao servo
+    Serial.begin(115200);
 
-  conecta_wifi(); // Conexão na rede WiFi 
-  conecta_mysql(); // Conexão no servidor MySQL
+    pinMode(ldrSupEsquerda, OUTPUT);
+    pinMode(ldrSupDireita, OUTPUT);
+    pinMode(ldrInfEsquerda, OUTPUT);
+    pinMode(ldrInfDireita, OUTPUT);   
+    pinMode(pin_analog, INPUT); 
 
-  inicia_sensor_corrente();
+    pinMode(pin_servo_vertical, INPUT); 
+    pinMode(pin_servo_horizontal, INPUT); 
+    servo_vertical.attach(pin_servo_vertical);  // atribui o porta ao servo
+    servo_horizontal.attach(pin_servo_horizontal);  // atribui o porta ao servo
+
+    delay(1000);
+
+
+
+   // conecta_wifi(); // Conexão na rede WiFi 
+   // conecta_mysql(); // Conexão no servidor MySQL
+
+    //   inicia_sensor_corrente();
 
 }
 
 void loop() {
 
-  timer(3);
+  timer(0);
+  delay(10);
 //    atualiza_ldr();
-//  movimento_vertical(movimentar());
-//  movimento_horizontal(movimentar());
+  movimento_vertical(movimentar());
+  movimento_horizontal(movimentar());
 
 //  if (aux == 0){
 //    insertMedicao(1, 3.3, "teste") ;
@@ -128,9 +136,9 @@ void loop() {
 // Serial.print(String(monitor_corrente(Sensor_A)));
 // Serial.println(" - media - " + String(random(1024,4096)));
 
- Serial.print("Corrente sensor B: ");
- Serial.print(String(monitor_corrente(Sensor_B)));
- Serial.println(" - media - " + String(random(1024,4096)));
+//  Serial.print("Corrente sensor B: ");
+//  Serial.print(String(monitor_corrente(Sensor_B)));
+//  Serial.println(" - media - " + String(random(1024,4096)));
 }
 
 bool movimentar(){
@@ -200,26 +208,34 @@ void posicao_espera(){
 }
 
 void atualiza_ldr(){
-  vlrLdrSupEsquerda = map(multiplex(ldrSupEsquerda), 0,1023,0,escala) * fatorLdrSupEsquerda;
-  vlrLdrSupDireita =  map(multiplex(ldrSupDireita), 0,1023,0,escala) * fatorLdrSupDireita;
-  vlrLdrInfEsquerda = map(multiplex(ldrInfEsquerda), 0,1023,0,escala) * fatorLdrInfEsquerda;
-  vlrLdrInfDireita =  map(multiplex(ldrInfDireita), 0,1023,0,escala) * fatorLdrInfDireita;
 
-  vlrLdrSuperior = (vlrLdrSupEsquerda + vlrLdrSupDireita) / divisor;
-  vlrLdrInferior = (vlrLdrInfEsquerda + vlrLdrInfDireita) / divisor;
-  vlrLdrDireita  = (vlrLdrSupDireita + vlrLdrInfDireita) / divisor;
-  vlrLdrEsquerda = (vlrLdrSupEsquerda + vlrLdrInfEsquerda ) / divisor;
-  
-  Serial.println();
-  Serial.println(to_str(vlrLdrSupEsquerda) + " | " + to_str(vlrLdrSupDireita));
-  Serial.println("--- ---");
-  Serial.println(to_str(vlrLdrInfEsquerda) + " | " + to_str(vlrLdrInfDireita));
-  Serial.println();
-  
-  Serial.println("\n\nValor vlrLdrSuperior: " + String(vlrLdrSuperior));
-  Serial.println("Valor vlrLdrInferior : " + String(vlrLdrInferior));
-  Serial.println("Valor vlrLdrDireita: " + String(vlrLdrDireita));
-  Serial.println("Valor vlrLdrEsquerda : " + String(vlrLdrEsquerda));
+    for (int i=0; i < 10; i++){
+        vlrLdrSupEsquerda = map(multiplex(ldrSupEsquerda), range_ini,tangr_fin,0,escala) * fatorLdrSupEsquerda;
+        vlrLdrSupDireita =  map(multiplex(ldrSupDireita),  range_ini,tangr_fin,0,escala) * fatorLdrSupDireita;
+        vlrLdrInfEsquerda = map(multiplex(ldrInfEsquerda), range_ini,tangr_fin,0,escala) * fatorLdrInfEsquerda;
+        vlrLdrInfDireita =  map(multiplex(ldrInfDireita),  range_ini,tangr_fin,0,escala) * fatorLdrInfDireita;
+    }
+
+    vlrLdrSupEsquerda = vlrLdrSupEsquerda / 10;
+    vlrLdrSupDireita = vlrLdrSupDireita / 10;
+    vlrLdrInfEsquerda = vlrLdrInfEsquerda / 10;
+    vlrLdrInfDireita = vlrLdrInfDireita / 10;
+
+    vlrLdrSuperior = (vlrLdrSupEsquerda + vlrLdrSupDireita) / divisor;
+    vlrLdrInferior = (vlrLdrInfEsquerda + vlrLdrInfDireita) / divisor;
+    vlrLdrDireita  = (vlrLdrSupDireita + vlrLdrInfDireita) / divisor;
+    vlrLdrEsquerda = (vlrLdrSupEsquerda + vlrLdrInfEsquerda ) / divisor;
+
+    Serial.println();
+    Serial.println(to_str(vlrLdrSupEsquerda) + " | " + to_str(vlrLdrSupDireita));
+    Serial.println("--- ---");
+    Serial.println(to_str(vlrLdrInfEsquerda) + " | " + to_str(vlrLdrInfDireita));
+    Serial.println();
+
+    Serial.println("\n\nValor vlrLdrSuperior: " + String(vlrLdrSuperior));
+    Serial.println("Valor vlrLdrInferior : " + String(vlrLdrInferior));
+    Serial.println("Valor vlrLdrDireita: " + String(vlrLdrDireita));
+    Serial.println("Valor vlrLdrEsquerda : " + String(vlrLdrEsquerda));
 }
 
 String to_str(int vlr){
@@ -338,11 +354,11 @@ double monitor_corrente(Adafruit_INA219 ina219){
 }
 
 void inicia_sensor_corrente(){
-      while (! Sensor_A.begin()) {
-    Serial.println("Failed to find INA219 chip A");
-        delay(50);
-  }
-  delay(100);  
+//       while (! Sensor_A.begin()) {
+//     Serial.println("Failed to find INA219 chip A");
+//         delay(50);
+//   }
+//   delay(100);  
     
     while (! Sensor_B.begin()) {
     Serial.println("Failed to find INA219 chip B");
